@@ -238,8 +238,8 @@ namespace AwAVR.SavablePresetsCreator
 
         private void DrawParameters(ref SavablePreset preset)
         {
-            if (preset.Parameters == null || preset.Parameters.Count <= 0)
-                return;
+            if (preset.Parameters == null)
+                preset.Parameters = new List<string>();
 
             if (!_reorderableLists.TryGetValue(preset, out var list))
             {
