@@ -241,6 +241,20 @@ namespace AwAVR.SavablePresetsCreator
             if (preset.Parameters == null)
                 preset.Parameters = new List<string>();
 
+            int newCount = EditorGUILayout.DelayedIntField("Size", preset.Parameters.Count);
+            if (newCount != preset.Parameters.Count && newCount >= 0)
+            {
+                Undo.RecordObject(_configuration, "Resize Parameters");
+
+                while (preset.Parameters.Count < newCount)
+                    preset.Parameters.Add(string.Empty);
+
+                while (preset.Parameters.Count > newCount)
+                    preset.Parameters.RemoveAt(preset.Parameters.Count - 1);
+
+                EditorUtility.SetDirty(_configuration);
+            }
+
             if (!_reorderableLists.TryGetValue(preset, out var list))
             {
                 var p = preset;
