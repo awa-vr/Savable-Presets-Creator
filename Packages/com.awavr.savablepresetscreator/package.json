@@ -1,0 +1,21 @@
+{
+  "author": {
+    "name": "AwA",
+    "email": "N/A",
+    "url": "https://github.com/awa-vr/vrc-tools"
+  },
+  "name": "com.awavr.savablepresetscreator",
+  "displayName": "AwA - Savable Presets",
+  "version": "1.0.0",
+  "description": "Create non-destructive in-game savable presets.",
+  "gitDependencies": {},
+  "vpmDependencies": {
+    "com.vrchat.avatars": "^3.0.0",
+    "com.awavr.core": "^1.2.1"
+  },
+  "legacyPackages": [],
+  "legacyFolders": {},
+  "legacyFiles": {},
+  "type": "tool",
+  "unity": "2022.3"
+}
