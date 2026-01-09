@@ -50,6 +50,20 @@ namespace AwAVR.SavablePresetsCreator
             window.minSize = new Vector2(450f, window.minSize.y);
         }
 
+        public static void OpenWithConfiguration(SavablePresetConfiguration configuration)
+        {
+            ShowWindow();
+            if (configuration != null)
+            {
+                var window = GetWindow<SavablePresetsCreator>(_windowTitle);
+                window._configuration = configuration;
+            }
+            else
+            {
+                Debug.LogError("Given configuration was invalid!");
+            }
+        }
+
         public void OnEnable()
         {
             // _avatars = Core.GetAvatarsInScene();
@@ -309,7 +323,9 @@ namespace AwAVR.SavablePresetsCreator
             if (!_configuration.Controller)
             {
                 // Create Controller
-                string path = "Assets/New Savable Presets Animator.controller";
+                string configPath = AssetDatabase.GetAssetPath(_configuration);
+                string configDirectory = System.IO.Path.GetDirectoryName(configPath);
+                string path = System.IO.Path.Combine(configDirectory, "New Savable Presets Animator.controller");
                 path = AssetDatabase.GenerateUniqueAssetPath(path);
                 var controller = AnimatorController.CreateAnimatorControllerAtPath(path);
 
@@ -322,7 +338,9 @@ namespace AwAVR.SavablePresetsCreator
             if (!_configuration.VRCParameters)
             {
                 // Create new VRC Expression Parameters
-                string path = "Assets/New Savable Presets Parameters.controller";
+                string configPath = AssetDatabase.GetAssetPath(_configuration);
+                string configDirectory = System.IO.Path.GetDirectoryName(configPath);
+                string path = System.IO.Path.Combine(configDirectory, "New Savable Presets Parameters.asset");
                 path = AssetDatabase.GenerateUniqueAssetPath(path);
                 var expressionParameters = ScriptableObject.CreateInstance<VRCExpressionParameters>();
                 AssetDatabase.CreateAsset(expressionParameters, path);
