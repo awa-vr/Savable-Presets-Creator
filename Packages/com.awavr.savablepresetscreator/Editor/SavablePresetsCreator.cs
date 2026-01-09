@@ -414,7 +414,7 @@ namespace AwAVR.SavablePresetsCreator
             _configuration.VRCParameters.parameters = newParamsList.ToArray();
         }
 
-        private void AddBoolParameter(string parameter, bool defaultBool)
+        private void AddBoolParameter(string parameter, bool defaultBool, bool saved = true)
         {
             _configuration.Controller.AddParameter(new AnimatorControllerParameter
             {
@@ -428,12 +428,12 @@ namespace AwAVR.SavablePresetsCreator
                 name = parameter,
                 valueType = VRCExpressionParameters.ValueType.Bool,
                 defaultValue = defaultBool ? 1.0f : 0.0f,
-                saved = true,
+                saved = saved,
                 networkSynced = false
             });
         }
 
-        private void AddFloatParameter(string parameter, float defaultFloat)
+        private void AddFloatParameter(string parameter, float defaultFloat, bool saved = true)
         {
             _configuration.Controller.AddParameter(new AnimatorControllerParameter
             {
@@ -447,12 +447,12 @@ namespace AwAVR.SavablePresetsCreator
                 name = parameter,
                 valueType = VRCExpressionParameters.ValueType.Float,
                 defaultValue = defaultFloat,
-                saved = true,
+                saved = saved,
                 networkSynced = false
             });
         }
 
-        private void AddIntParameter(string parameter, int defaultInt)
+        private void AddIntParameter(string parameter, int defaultInt, bool saved = true)
         {
             _configuration.Controller.AddParameter(new AnimatorControllerParameter
             {
@@ -466,7 +466,7 @@ namespace AwAVR.SavablePresetsCreator
                 name = parameter,
                 valueType = VRCExpressionParameters.ValueType.Int,
                 defaultValue = defaultInt,
-                saved = true,
+                saved = saved,
                 networkSynced = false
             });
         }
@@ -477,10 +477,10 @@ namespace AwAVR.SavablePresetsCreator
             string baseParameter = JoinParameterPath("SA", preset.Name);
 
             // Helper parameters
-            AddBoolParameter(JoinParameterPath(baseParameter, "Load"), false);
-            AddBoolParameter(JoinParameterPath(baseParameter, "Save"), false);
-            AddBoolParameter(JoinParameterPath(baseParameter, "Reset"), false);
-            AddBoolParameter(JoinParameterPath(baseParameter, "Has Saved"), false);
+            AddBoolParameter(JoinParameterPath(baseParameter, "Load"), false, false);
+            AddBoolParameter(JoinParameterPath(baseParameter, "Save"), false, false);
+            AddBoolParameter(JoinParameterPath(baseParameter, "Reset"), false, false);
+            AddBoolParameter(JoinParameterPath(baseParameter, "Has Saved"), false, true);
 
             // Create States
             var loadState = animatorLayer.stateMachine.AddState($"{preset.Name} - Load");
@@ -505,7 +505,7 @@ namespace AwAVR.SavablePresetsCreator
             string baseParameter)
         {
             // Load
-            idleState.AddTransition(new AnimatorStateTransition
+            idleState.AddTransition(Register(new AnimatorStateTransition
             {
                 duration = 0.0f,
                 hasExitTime = false,
@@ -527,12 +527,12 @@ namespace AwAVR.SavablePresetsCreator
                         threshold = 1.0f
                     }
                 }
-            });
+            }));
             var loadExistTransition = loadState.AddExitTransition(true);
             SetExitTransitionSettings(ref loadExistTransition, baseParameter, "Load");
 
             // Load (Not Saved)
-            idleState.AddTransition(new AnimatorStateTransition
+            idleState.AddTransition(Register(new AnimatorStateTransition
             {
                 duration = 0.0f,
                 hasExitTime = false,
@@ -554,12 +554,12 @@ namespace AwAVR.SavablePresetsCreator
                         threshold = 1.0f
                     }
                 }
-            });
+            }));
             var loadNotSavedExistTransition = loadNotSavedState.AddExitTransition(true);
             SetExitTransitionSettings(ref loadNotSavedExistTransition, baseParameter, "Load");
 
             // Save
-            idleState.AddTransition(new AnimatorStateTransition
+            idleState.AddTransition(Register(new AnimatorStateTransition
             {
                 duration = 0.0f,
                 hasExitTime = false,
@@ -575,12 +575,12 @@ namespace AwAVR.SavablePresetsCreator
                         threshold = 1.0f
                     }
                 }
-            });
+            }));
             var saveExitTransition = saveState.AddExitTransition(true);
             SetExitTransitionSettings(ref saveExitTransition, baseParameter, "Save");
 
             // Reset
-            idleState.AddTransition(new AnimatorStateTransition
+            idleState.AddTransition(Register(new AnimatorStateTransition
             {
                 duration = 0.0f,
                 hasExitTime = false,
@@ -596,9 +596,19 @@ namespace AwAVR.SavablePresetsCreator
                         threshold = 1.0f
                     }
                 }
-            });
+            }));
             var resetExitTransition = resetState.AddExitTransition(true);
             SetExitTransitionSettings(ref resetExitTransition, baseParameter, "Reset");
+        }
+
+        private AnimatorStateTransition Register(AnimatorStateTransition transition)
+        {
+            AssetDatabase.AddObjectToAsset(transition, _configuration.Controller);
+
+            transition.hideFlags = HideFlags.HideInHierarchy;
+            if (transition.destinationState) transition.name = $"Transition -> {transition.destinationState.name}";
+
+            return transition;
         }
 
         private void SetExitTransitionSettings(ref AnimatorStateTransition transition, string baseParameter,
