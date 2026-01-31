@@ -122,6 +122,10 @@ namespace AwAVR.SavablePresetsCreator
                     UpdateAnimator();
                 }
             }
+            else
+            {
+                DrawNewConfigurationPopup();
+            }
         }
 
         #endregion
@@ -161,6 +165,31 @@ namespace AwAVR.SavablePresetsCreator
                     typeof(SavablePresetConfiguration),
                     false)
                 as SavablePresetConfiguration;
+        }
+
+        private void DrawNewConfigurationPopup()
+        {
+            EditorGUILayout.HelpBox("No configuration selected!" +
+                                    "\nPlease select one or create one to use this tool." +
+                                    "\n" +
+                                    "\nEither use the button below to create a new configuration in the Assets folder," +
+                                    "\nor right-click in a folder (Create/AwA/Savable Preset Configuration)",
+                MessageType.Warning);
+            if (GUILayout.Button("Create new configuration"))
+            {
+                string path = "Assets/New Savable Preset Configuration.asset";
+                path = AssetDatabase.GenerateUniqueAssetPath(path);
+
+                var newConfiguration = ScriptableObject.CreateInstance<SavablePresetConfiguration>();
+                newConfiguration.Name = "New Configuration";
+
+                AssetDatabase.CreateAsset(newConfiguration, path);
+                AssetDatabase.SaveAssets();
+
+                _configuration = newConfiguration;
+                EditorGUIUtility.PingObject(newConfiguration);
+                Selection.activeObject = newConfiguration;
+            }
         }
 
         private void DrawSavablePresetHeader(ref SavablePreset preset, ref int i)
