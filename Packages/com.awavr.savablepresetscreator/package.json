@@ -6,7 +6,7 @@
   },
   "name": "com.awavr.savablepresetscreator",
   "displayName": "AwA - Savable Presets",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Create non-destructive in-game savable presets.",
   "gitDependencies": {},
   "vpmDependencies": {
