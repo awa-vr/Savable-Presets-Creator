@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEditorInternal;
@@ -23,9 +24,11 @@ namespace AwAVR.SavablePresetsCreator
 
         private static string _windowTitle = "Savable Presets Creator";
 
-        // private List<VRCAvatarDescriptor> _avatars;
-        // private VRCAvatarDescriptor _avatar;
-        // private AnimatorController _fx;
+        private const string WildcardSuffix = "/*";
+        private const char ExcludePrefix = '!';
+        private List<VRCAvatarDescriptor> _avatars;
+        private VRCAvatarDescriptor _avatar;
+        private AnimatorController _fx;
         private SavablePresetConfiguration _configuration;
 
         private Vector2 _scrollPos = Vector2.zero;
@@ -66,32 +69,24 @@ namespace AwAVR.SavablePresetsCreator
 
         public void OnEnable()
         {
-            // _avatars = Core.GetAvatarsInScene();
-            //
-            // if (_avatars.Count == 0)
-            // {
-            //     EditorGUILayout.HelpBox("Please place an avatar in the scene", MessageType.Error);
-            //     _avatars = null;
-            //     return;
-            // }
-            //
-            // if (_avatars.Count == 1)
-            // {
-            //     _avatar = _avatars.First();
-            //     _avatars.Clear();
-            //     return;
-            // }
+            _avatars = Core.GetAvatarsInScene() ?? new List<VRCAvatarDescriptor>();
+
+            if (_avatars.Count == 1)
+            {
+                _avatar = _avatars.First();
+                _avatars.Clear();
+            }
         }
 
         public void OnGUI()
         {
             Core.Title(_windowTitle);
 
-            // if (!GetAvatar())
-            //     return;
-            //
-            // if (!GetFXController())
-            //     return;
+            if (!GetAvatar())
+                return;
+
+            if (!GetFXController())
+                return;
 
             DrawConfigurationField();
             if (_configuration)
@@ -132,30 +127,37 @@ namespace AwAVR.SavablePresetsCreator
 
         #region GUIHelpers
 
-        // private bool GetAvatar()
-        // {
-        //     Core.GetAvatar(ref _avatar, ref _avatars);
-        //     if (!_avatar)
-        //     {
-        //         EditorGUILayout.HelpBox("Please select an avatar", MessageType.Error);
-        //         return false;
-        //     }
-        //
-        //     return true;
-        // }
-        //
-        // private bool GetFXController()
-        // {
-        //     _fx = Core.GetAnimatorController(_avatar);
-        //
-        //     if (_fx == null)
-        //     {
-        //         EditorGUILayout.HelpBox("Can't find an FX animator on your avatar. Please add one", MessageType.Error);
-        //         return false;
-        //     }
-        //
-        //     return true;
-        // }
+        private bool GetAvatar()
+        {
+            Core.GetAvatar(ref _avatar, ref _avatars);
+            if (!_avatar)
+            {
+                EditorGUILayout.HelpBox("Please select an avatar", MessageType.Error);
+                return false;
+            }
+
+            if (_avatar.expressionParameters == null)
+            {
+                EditorGUILayout.HelpBox(
+                    "Selected avatar has no Expression Parameters asset. Wildcard preview/expansion will only include exact names.",
+                    MessageType.Warning);
+            }
+
+            return true;
+        }
+
+        private bool GetFXController()
+        {
+            _fx = Core.GetAnimatorController(_avatar);
+
+            if (_fx == null)
+            {
+                EditorGUILayout.HelpBox("Can't find an FX animator on your avatar. Please add one", MessageType.Error);
+                return false;
+            }
+
+            return true;
+        }
 
         private void DrawConfigurationField()
         {
@@ -242,7 +244,46 @@ namespace AwAVR.SavablePresetsCreator
                 {
                     CopyPath(preset.Name, "Save");
                 }
+
+                if (GUILayout.Button("Preview Added"))
+                {
+                    ShowPreviewAddedParameters(preset);
+                }
             }
+        }
+
+        private void ShowPreviewAddedParameters(SavablePreset preset)
+        {
+            var expanded = ResolvePresetParameters(preset, out var unmatchedWildcards);
+            var builder = new StringBuilder();
+
+            builder.AppendLine($"Preset: {preset.Name}");
+            builder.AppendLine($"Resolved Parameters: {expanded.Count}");
+            builder.AppendLine();
+
+            if (expanded.Count == 0)
+            {
+                builder.AppendLine("(No parameters resolved)");
+            }
+            else
+            {
+                foreach (var parameter in expanded)
+                {
+                    builder.AppendLine(parameter);
+                }
+            }
+
+            if (unmatchedWildcards.Count > 0)
+            {
+                builder.AppendLine();
+                builder.AppendLine("Unmatched wildcard patterns:");
+                foreach (var wildcard in unmatchedWildcards)
+                {
+                    builder.AppendLine($"- {wildcard}");
+                }
+            }
+
+            EditorUtility.DisplayDialog("Preview Added Parameters", builder.ToString(), "Close");
         }
 
         private void CopyPath(string presetName, string parameter)
@@ -429,6 +470,116 @@ namespace AwAVR.SavablePresetsCreator
             return string.Join('/', new string[] { a, b });
         }
 
+        private List<string> GetAvatarParameterNames()
+        {
+            if (_avatar == null || _avatar.expressionParameters == null || _avatar.expressionParameters.parameters == null)
+                return new List<string>();
+
+            return _avatar.expressionParameters.parameters
+                .Where(p => p != null && !string.IsNullOrWhiteSpace(p.name))
+                .Select(p => p.name.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+        }
+
+        private List<string> ResolvePresetParameters(SavablePreset preset, out List<string> unmatchedWildcards)
+        {
+            unmatchedWildcards = new List<string>();
+            var resolved = new List<string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var avatarParameters = GetAvatarParameterNames();
+            var exactExclusions = new HashSet<string>(StringComparer.Ordinal);
+            var wildcardExclusionPrefixes = new List<string>();
+
+            if (preset?.Parameters == null)
+                return resolved;
+
+            bool IsWildcard(string value)
+            {
+                return value.EndsWith(WildcardSuffix, StringComparison.Ordinal);
+            }
+
+            bool IsExcluded(string value)
+            {
+                if (exactExclusions.Contains(value))
+                    return true;
+
+                return wildcardExclusionPrefixes.Any(prefix =>
+                    value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+            }
+
+            void RemoveResolvedMatches(Func<string, bool> predicate)
+            {
+                resolved.RemoveAll(item =>
+                {
+                    if (!predicate(item))
+                        return false;
+
+                    seen.Remove(item);
+                    return true;
+                });
+            }
+
+            foreach (var rawEntry in preset.Parameters)
+            {
+                if (string.IsNullOrWhiteSpace(rawEntry))
+                    continue;
+
+                var entry = rawEntry.Trim();
+
+                // Prefixing with "!" excludes exact names and wildcards (e.g. !Color/*).
+                if (entry.StartsWith(ExcludePrefix.ToString(), StringComparison.Ordinal))
+                {
+                    var excludedEntry = entry.Substring(1).Trim();
+                    if (string.IsNullOrWhiteSpace(excludedEntry))
+                        continue;
+
+                    if (IsWildcard(excludedEntry))
+                    {
+                        var exclusionPrefix = excludedEntry.Substring(0, excludedEntry.Length - WildcardSuffix.Length);
+                        wildcardExclusionPrefixes.Add(exclusionPrefix);
+                        RemoveResolvedMatches(item =>
+                            item.StartsWith(exclusionPrefix, StringComparison.OrdinalIgnoreCase));
+                    }
+                    else
+                    {
+                        exactExclusions.Add(excludedEntry);
+                        RemoveResolvedMatches(item => string.Equals(item, excludedEntry, StringComparison.Ordinal));
+                    }
+
+                    continue;
+                }
+
+                if (!IsWildcard(entry))
+                {
+                    if (!IsExcluded(entry) && seen.Add(entry))
+                        resolved.Add(entry);
+                    continue;
+                }
+
+                // "Color/*" expands by matching avatar parameters with prefix "Color".
+                var wildcardPrefix = entry.Substring(0, entry.Length - WildcardSuffix.Length);
+                var matches = avatarParameters
+                    .Where(parameterName => parameterName.StartsWith(wildcardPrefix, StringComparison.OrdinalIgnoreCase))
+                    .Where(parameterName => !IsExcluded(parameterName))
+                    .ToList();
+
+                if (matches.Count == 0)
+                {
+                    unmatchedWildcards.Add(entry);
+                    continue;
+                }
+
+                foreach (var match in matches)
+                {
+                    if (seen.Add(match))
+                        resolved.Add(match);
+                }
+            }
+
+            return resolved;
+        }
+
         private void AddToVRCParametersList(VRCExpressionParameters.Parameter parameter)
         {
             List<VRCExpressionParameters.Parameter> newParamsList =
@@ -504,6 +655,14 @@ namespace AwAVR.SavablePresetsCreator
             ref AnimatorState idleState)
         {
             string baseParameter = JoinParameterPath("SA", preset.Name);
+            var resolvedParameters = ResolvePresetParameters(preset, out var unmatchedWildcards);
+
+            if (unmatchedWildcards.Count > 0)
+            {
+                Debug.LogWarning(
+                    $"Savable Preset '{preset.Name}' has wildcard entries that matched no avatar parameters: {string.Join(", ", unmatchedWildcards)}",
+                    _configuration);
+            }
 
             // Helper parameters
             AddBoolParameter(JoinParameterPath(baseParameter, "Load"), false, false);
@@ -520,13 +679,13 @@ namespace AwAVR.SavablePresetsCreator
                 baseParameter);
 
             // Add All Parameters
-            AddParameters(preset, baseParameter);
+            AddParameters(resolvedParameters, baseParameter);
 
             // Add Behaviors to states
-            AddLoadBehavior(loadState, preset, baseParameter);
-            AddLoadNotSavedBehavior(loadNotSavedState, preset, baseParameter);
-            AddSaveBehavior(saveState, preset, baseParameter);
-            AddResetBehavior(resetState, preset, baseParameter);
+            AddLoadBehavior(loadState, resolvedParameters, baseParameter);
+            AddLoadNotSavedBehavior(loadNotSavedState, baseParameter);
+            AddSaveBehavior(saveState, resolvedParameters, baseParameter);
+            AddResetBehavior(resetState, resolvedParameters, baseParameter);
         }
 
         private void CreateTransitions(ref AnimatorState idleState, ref AnimatorState loadState,
@@ -659,21 +818,21 @@ namespace AwAVR.SavablePresetsCreator
             transition.interruptionSource = TransitionInterruptionSource.None;
         }
 
-        private void AddParameters(SavablePreset preset, string baseParameter)
+        private void AddParameters(IEnumerable<string> parameters, string baseParameter)
         {
-            foreach (var parameter in preset.Parameters)
+            foreach (var parameter in parameters)
             {
                 string parameterName = JoinParameterPath(baseParameter, parameter);
                 AddFloatParameter(parameterName, 0.0f);
             }
         }
 
-        private void AddLoadBehavior(AnimatorState loadState, SavablePreset preset, string baseParameter)
+        private void AddLoadBehavior(AnimatorState loadState, IEnumerable<string> parameters, string baseParameter)
         {
             var parameterDriver = loadState.AddStateMachineBehaviour<VRCAvatarParameterDriver>();
             parameterDriver.localOnly = true;
 
-            foreach (var parameter in preset.Parameters)
+            foreach (var parameter in parameters)
             {
                 parameterDriver.parameters.Add(new VRC_AvatarParameterDriver.Parameter
                 {
@@ -686,8 +845,7 @@ namespace AwAVR.SavablePresetsCreator
             AddToParameterDriverLast(ref parameterDriver, baseParameter, "Load", 0.0f);
         }
 
-        private void AddLoadNotSavedBehavior(AnimatorState loadNotSavedState, SavablePreset preset,
-            string baseParameter)
+        private void AddLoadNotSavedBehavior(AnimatorState loadNotSavedState, string baseParameter)
         {
             var parameterDriver = loadNotSavedState.AddStateMachineBehaviour<VRCAvatarParameterDriver>();
             parameterDriver.localOnly = true;
@@ -695,12 +853,12 @@ namespace AwAVR.SavablePresetsCreator
             AddToParameterDriverLast(ref parameterDriver, baseParameter, "Load", 0.0f);
         }
 
-        private void AddSaveBehavior(AnimatorState saveState, SavablePreset preset, string baseParameter)
+        private void AddSaveBehavior(AnimatorState saveState, IEnumerable<string> parameters, string baseParameter)
         {
             var parameterDriver = saveState.AddStateMachineBehaviour<VRCAvatarParameterDriver>();
             parameterDriver.localOnly = true;
 
-            foreach (var parameter in preset.Parameters)
+            foreach (var parameter in parameters)
             {
                 parameterDriver.parameters.Add(new VRC_AvatarParameterDriver.Parameter
                 {
@@ -714,12 +872,12 @@ namespace AwAVR.SavablePresetsCreator
             AddToParameterDriverLast(ref parameterDriver, baseParameter, "Save", 0.0f);
         }
 
-        private void AddResetBehavior(AnimatorState resetState, SavablePreset preset, string baseParameter)
+        private void AddResetBehavior(AnimatorState resetState, IEnumerable<string> parameters, string baseParameter)
         {
             var parameterDriver = resetState.AddStateMachineBehaviour<VRCAvatarParameterDriver>();
             parameterDriver.localOnly = true;
 
-            foreach (var parameter in preset.Parameters)
+            foreach (var parameter in parameters)
             {
                 parameterDriver.parameters.Add(new VRC_AvatarParameterDriver.Parameter
                 {
